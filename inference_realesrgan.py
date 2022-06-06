@@ -2,6 +2,8 @@ import argparse
 import cv2
 import glob
 import os
+import os.path as osp
+from itertools import chain
 from basicsr.archs.rrdbnet_arch import RRDBNet
 
 from realesrgan import RealESRGANer
@@ -87,12 +89,10 @@ def main():
             bg_upsampler=upsampler)
     os.makedirs(args.output, exist_ok=True)
 
-    if os.path.isfile(args.input):
-        paths = [args.input]
-    else:
-        paths = sorted(glob.glob(os.path.join(args.input, '*')))
-
-    for idx, path in enumerate(paths):
+    for idx, path in enumerate(
+            [args.input] if osp.isfile(args.input) else
+            chain.from_iterable([osp.join(root, file) for file in files] for root, dirs, files in os.walk(args.input))
+    ):
         imgname, extension = os.path.splitext(os.path.basename(path))
         print('Testing', idx, imgname)
 
