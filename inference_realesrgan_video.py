@@ -139,8 +139,11 @@ class Reader:
 class Writer:
 
     def __init__(self, args, audio, height, width, video_save_path, fps):
+        if args.setsize:
+            args.outscale = args.setsize / min(width, height)
+
         out_width, out_height = int(width * args.outscale), int(height * args.outscale)
-        if out_height > 2160:
+        if min(out_height, out_width) > 2160:
             print('You are generating video that is larger than 4K, which will be very slow due to IO speed.',
                   'We highly recommend to decrease the outscale(aka, -s).')
 
@@ -197,6 +200,12 @@ def inference_video(args, video_save_path, device=None, total_workers=1, worker_
     if not os.path.isfile(model_path):
         raise ValueError(f'Model {args.model_name} does not exist.')
 
+    reader = Reader(args, total_workers, worker_idx)
+    audio = reader.get_audio()
+    height, width = reader.get_resolution()
+    fps = reader.get_fps()
+    writer = Writer(args, audio, height, width, video_save_path, fps)
+
     # restorer
     upsampler = RealESRGANer(
         scale=netscale,
@@ -225,11 +234,6 @@ def inference_video(args, video_save_path, device=None, total_workers=1, worker_
     else:
         face_enhancer = None
 
-    reader = Reader(args, total_workers, worker_idx)
-    audio = reader.get_audio()
-    height, width = reader.get_resolution()
-    fps = reader.get_fps()
-    writer = Writer(args, audio, height, width, video_save_path, fps)
 
     pbar = tqdm(total=len(reader), unit='frame', desc='inference')
     while True:
@@ -319,6 +323,7 @@ def main():
               'Default:realesr-animevideov3'))
     parser.add_argument('-o', '--output', type=str, default='results', help='Output folder')
     parser.add_argument('-s', '--outscale', type=float, default=4, help='The final upsampling scale of the image')
+    parser.add_argument('-ss', '--setsize', type=int, default=0, help='Set min size of the image')
     parser.add_argument('--suffix', type=str, default='out', help='Suffix of the restored video')
     parser.add_argument('-t', '--tile', type=int, default=0, help='Tile size, 0 for no tile during testing')
     parser.add_argument('--tile_pad', type=int, default=10, help='Tile padding')

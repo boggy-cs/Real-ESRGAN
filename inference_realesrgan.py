@@ -5,9 +5,12 @@ import os
 import os.path as osp
 from itertools import chain
 from basicsr.archs.rrdbnet_arch import RRDBNet
+from urllib.request import urlretrieve as wget
 
 from realesrgan import RealESRGANer
 from realesrgan.archs.srvgg_arch import SRVGGNetCompact
+
+from gfpgan import GFPGANer
 
 
 def main():
@@ -24,6 +27,7 @@ def main():
               'realesr-animevideov3'))
     parser.add_argument('-o', '--output', type=str, default='results', help='Output folder')
     parser.add_argument('-s', '--outscale', type=float, default=4, help='The final upsampling scale of the image')
+    parser.add_argument('-ss', '--setsize', type=int, default=0, help='Set min size of the image')
     parser.add_argument('--suffix', type=str, default='out', help='Suffix of the restored image')
     parser.add_argument('-t', '--tile', type=int, default=0, help='Tile size, 0 for no tile during testing')
     parser.add_argument('--tile_pad', type=int, default=10, help='Tile padding')
@@ -43,6 +47,9 @@ def main():
         help='Image extension. Options: auto | jpg | png, auto means using the same extension as inputs')
     parser.add_argument(
         '-g', '--gpu-id', type=int, default=None, help='gpu device to use (default=None) can be 0,1,2 for multi-gpu')
+    parser.add_argument(
+        '-gg', '--gfgan', type=str, default='experiments/pretrained_models/GFPGANv1.3.pth',
+        help='gfgan pretrained model path')
 
     args = parser.parse_args()
 
@@ -68,25 +75,10 @@ def main():
     if not os.path.isfile(model_path):
         raise ValueError(f'Model {args.model_name} does not exist.')
 
-    # restorer
-    upsampler = RealESRGANer(
-        scale=netscale,
-        model_path=model_path,
-        model=model,
-        tile=args.tile,
-        tile_pad=args.tile_pad,
-        pre_pad=args.pre_pad,
-        half=not args.fp32,
-        gpu_id=args.gpu_id)
+    if args.face_engance and not osp.isfile(args.gfgan):
+        wget('https://github.com/TencentARC/GFPGAN/releases/download/v1.3.0/GFPGANv1.3.pth', args.gfgan)
 
-    if args.face_enhance:  # Use GFPGAN for face enhancement
-        from gfpgan import GFPGANer
-        face_enhancer = GFPGANer(
-            model_path='https://github.com/TencentARC/GFPGAN/releases/download/v1.3.0/GFPGANv1.3.pth',
-            upscale=args.outscale,
-            arch='clean',
-            channel_multiplier=2,
-            bg_upsampler=upsampler)
+
     os.makedirs(args.output, exist_ok=True)
 
     for idx, path in enumerate(
@@ -97,10 +89,33 @@ def main():
         print('Testing', idx, imgname)
 
         img = cv2.imread(path, cv2.IMREAD_UNCHANGED)
+
+        if args.ss:
+            h, w, _ = img.shape
+            args.outscale = args.setsize / min(h, w)
+
         if len(img.shape) == 3 and img.shape[2] == 4:
             img_mode = 'RGBA'
         else:
             img_mode = None
+
+        upsampler = RealESRGANer(
+            scale=netscale,
+            model_path=model_path,
+            model=model,
+            tile=args.tile,
+            tile_pad=args.tile_pad,
+            pre_pad=args.pre_pad,
+            half=not args.fp32,
+            gpu_id=args.gpu_id)
+
+        if args.face_enhance:  # Use GFPGAN for face enhancement
+            face_enhancer = GFPGANer(
+                model_path=args.gfgan,
+                upscale=args.outscale,
+                arch='clean',
+                channel_multiplier=2,
+                bg_upsampler=upsampler)
 
         try:
             if args.face_enhance:
